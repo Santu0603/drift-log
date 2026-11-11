@@ -1,0 +1,1412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#1c2925">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Drift Log</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=Recursive:slnt,wght,CASL,CRSV,MONO@-15..0,300..1000,0..1,0..1,0..1&amp;display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: one phone-width column, left-aligned like notes on a board.
+     The session screen fills the viewport and keeps its single action under the thumb. */
+  color-scheme: dark;
+  --board: #1c2925;         /* the slate board everything is written on */
+  --board-raised: #243430;  /* panels */
+  --board-sunk: #16211e;    /* inputs and wells */
+  --rule: #3a4d46;          /* hairlines */
+  --chalk: #edf0e6;         /* primary text */
+  --chalk-soft: #b9c5ba;    /* secondary text */
+  --chalk-faint: #93a297;   /* hints, axis text */
+  --focus: #2fa094;         /* focused time */
+  --drift: #bd8a0a;         /* drifts and time away */
+  --pulse: #e14660;         /* heart rate */
+  --rest: #63766d;          /* planned breaks */
+  --ink-on-fill: #10201c;   /* text on a coloured fill */
+  --font: "Recursive", ui-rounded, "SF Pro Rounded", system-ui, "Segoe UI", Roboto, sans-serif;
+  --plain: "MONO" 0, "CASL" 0;
+  --casual: "MONO" 0, "CASL" 1;
+  --digits: "MONO" 1, "CASL" 1;
+  --r-s: 8px;
+  --r-m: 12px;
+  --r-l: 16px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--board);
+  color: var(--chalk);
+  font: 400 16px/1.5 var(--font);
+  font-variation-settings: var(--plain);
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+[hidden] { display: none !important; }
+#app { min-height: 100%; display: flex; flex-direction: column; }
+
+.view { width: 100%; max-width: 580px; margin: 0 auto; padding: 28px 18px 56px; display: flex; flex-direction: column; gap: 30px; }
+.view-report { max-width: 760px; }
+.stack { display: flex; flex-direction: column; gap: 14px; }
+
+h1, h2 { margin: 0; font-variation-settings: var(--casual); text-wrap: balance; }
+h1 { font-size: 34px; line-height: 1.1; font-weight: 800; letter-spacing: -0.015em; overflow-wrap: anywhere; }
+h2 { font-size: 21px; line-height: 1.25; font-weight: 700; }
+p { margin: 0; }
+.lede { color: var(--chalk-soft); margin-top: 8px; max-width: 36em; }
+.hint { color: var(--chalk-faint); font-size: 14px; line-height: 1.45; }
+.hint.warn { color: var(--chalk-soft); border-left: 3px solid var(--drift); padding-left: 10px; }
+
+/* ---------- forms and controls ---------- */
+.panel { background: var(--board-raised); border-radius: var(--r-l); padding: 20px 18px; display: flex; flex-direction: column; gap: 16px; }
+.field { display: flex; flex-direction: column; gap: 8px; }
+label, .label { font-weight: 600; font-size: 15px; line-height: 1.35; }
+input[type="text"], textarea {
+  width: 100%; font: inherit; font-variation-settings: inherit; color: var(--chalk);
+  background: var(--board-sunk); border: 1px solid var(--rule); border-radius: var(--r-m); padding: 12px 14px;
+}
+textarea { resize: vertical; min-height: 88px; display: block; }
+::placeholder { color: var(--chalk-faint); opacity: 1; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font: inherit; font-variation-settings: inherit; font-size: 15px; line-height: 1.2; color: var(--chalk);
+  background: transparent; border: 1px solid var(--rule); border-radius: var(--r-s);
+  padding: 8px 12px; min-height: 40px; cursor: pointer; text-align: left;
+}
+.chip[aria-pressed="true"] { background: var(--chalk); border-color: var(--chalk); color: var(--ink-on-fill); font-weight: 600; }
+
+.btn {
+  width: 100%; min-height: 60px; padding: 0 20px; border: 0; border-radius: var(--r-l); cursor: pointer;
+  font: inherit; font-variation-settings: var(--casual); font-size: 19px; font-weight: 800; color: var(--ink-on-fill);
+}
+.btn-focus { background: var(--focus); }
+.btn-drift { background: var(--drift); }
+.btn-quiet {
+  min-height: 46px; padding: 0 16px; border: 1px solid var(--rule); border-radius: var(--r-m); cursor: pointer;
+  background: transparent; color: var(--chalk); font: inherit; font-variation-settings: inherit; font-weight: 600;
+}
+.btn-quiet:disabled { color: var(--chalk-faint); cursor: default; }
+.link {
+  min-height: 44px; padding: 10px 2px; border: 0; background: none; cursor: pointer;
+  font: inherit; font-variation-settings: inherit; color: var(--chalk-soft); text-align: left;
+  text-decoration: underline; text-decoration-color: var(--rule); text-underline-offset: 4px;
+}
+.link.strong { color: var(--chalk); font-weight: 700; text-decoration-color: var(--chalk-faint); }
+:focus-visible { outline: 2px solid var(--chalk); outline-offset: 2px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+.notice { border: 1px solid var(--rule); border-left: 3px solid var(--drift); border-radius: var(--r-m); padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+
+/* ---------- heart rate ---------- */
+.hr-setup { border-top: 1px solid var(--rule); padding-top: 16px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.hr-setup details { width: 100%; }
+.hr-setup summary { cursor: pointer; color: var(--chalk-soft); font-size: 15px; padding: 8px 0; }
+.hr-setup ol { margin: 4px 0 10px; padding-left: 22px; color: var(--chalk-soft); font-size: 15px; display: flex; flex-direction: column; gap: 6px; }
+.hr-live { display: flex; align-items: center; gap: 16px; width: 100%; }
+.hr-num { font-variation-settings: var(--digits); font-variant-numeric: tabular-nums; font-weight: 800; }
+.hr-live .hr-num { font-size: 42px; line-height: 1; }
+.hr-unit { color: var(--chalk-soft); font-size: 14px; }
+.hr-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.spark { flex: 1; min-width: 0; height: 40px; }
+.spark svg { display: block; }
+.hr-path { fill: none; stroke: var(--pulse); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.hr-dot { fill: var(--pulse); stroke: var(--board); stroke-width: 2; }
+.panel .hr-dot { stroke: var(--board-raised); }
+
+/* ---------- strips: focused and away time on one line ---------- */
+.strip { display: flex; gap: 2px; height: 10px; width: 100%; }
+.strip i { display: block; min-width: 2px; border-radius: 3px; flex-basis: 0; }
+.strip .f { background: var(--focus); }
+.strip .a { background: var(--drift); }
+.strip .b { background: var(--rest); }
+.strip .gap { min-width: 0; }
+
+/* ---------- home lists ---------- */
+.history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.row {
+  width: 100%; display: flex; flex-direction: column; gap: 8px; padding: 14px 0; cursor: pointer;
+  border: 0; border-top: 1px solid var(--rule); background: none; color: inherit; text-align: left;
+  font: inherit; font-variation-settings: inherit;
+}
+.row-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.row-title { font-weight: 700; overflow-wrap: anywhere; }
+.row-when { color: var(--chalk-soft); font-size: 14px; white-space: nowrap; }
+.row-meta { color: var(--chalk-soft); font-size: 14px; overflow-wrap: anywhere; }
+.history .empty { border-top: 1px solid var(--rule); padding-top: 12px; }
+
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 600; font-size: 14px; line-height: 1.3; color: var(--chalk-soft); padding: 6px 12px 8px 0; border-bottom: 1px solid var(--rule); vertical-align: bottom; }
+td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--rule); vertical-align: top; overflow-wrap: anywhere; }
+td.when { white-space: nowrap; }
+th.num, td.num { text-align: right; }
+td.num { white-space: nowrap; }
+th:last-child, td:last-child { padding-right: 0; }
+
+/* ---------- session screen ---------- */
+.view-session { flex: 1; width: 100%; max-width: 580px; margin: 0 auto; padding: 18px 18px 0; display: flex; flex-direction: column; gap: 16px; }
+.sess-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; }
+.sess-what { min-width: 0; }
+.sess-subject { font-weight: 700; font-size: 17px; line-height: 1.3; overflow-wrap: anywhere; }
+.sess-method { color: var(--chalk-soft); font-size: 15px; overflow-wrap: anywhere; }
+.sess-hr { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.sess-hr .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pulse); align-self: center; }
+.sess-hr .hr-num { font-size: 24px; line-height: 1.2; }
+.sess-hr .link { padding: 0; min-height: 0; font-size: 15px; }
+.sess-core { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
+.sess-label { font-variation-settings: var(--casual); font-size: 19px; font-weight: 600; color: var(--chalk-soft); }
+.sess-timer {
+  font-variation-settings: var(--digits); font-variant-numeric: tabular-nums; font-weight: 800;
+  font-size: clamp(68px, 24vw, 132px); line-height: 0.95; letter-spacing: -0.03em; margin-top: -6px;
+  transition: color 0.2s ease;
+}
+.sess-timer.long { font-size: clamp(50px, 16.5vw, 104px); }
+.is-away .sess-timer { color: var(--drift); font-size: clamp(56px, 19vw, 104px); }
+.is-break .sess-timer { color: var(--chalk-soft); }
+.sess-sub { color: var(--chalk-soft); font-size: 15px; }
+.sess-spark { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.is-away .sess-spark, .is-away #s-strip { display: none; }
+.sess-tags { display: flex; flex-direction: column; gap: 16px; margin-top: 6px; }
+.sess-foot { position: sticky; bottom: 0; background: var(--board); padding: 6px 0 14px; display: flex; flex-direction: column; gap: 4px; }
+.sess-foot::before { content: ""; position: absolute; left: 0; right: 0; top: -18px; height: 18px; background: linear-gradient(to bottom, rgba(28, 41, 37, 0), var(--board)); pointer-events: none; }
+.is-away #s-wake { display: none; }
+.sess-links { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 16px; min-height: 44px; }
+.sess-links .ask { font-weight: 600; flex-basis: 100%; padding-top: 8px; }
+.sess-foot .hint { text-align: left; }
+
+/* ---------- report ---------- */
+.back { align-self: flex-start; }
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.stat { border-top: 1px solid var(--rule); padding-top: 10px; display: flex; flex-direction: column; gap: 2px; }
+.stat .v { font-variation-settings: var(--casual); font-size: 28px; font-weight: 800; line-height: 1.15; }
+.stat .k { color: var(--chalk-soft); font-size: 14px; }
+.stat .sub { color: var(--chalk-faint); font-size: 14px; }
+@media (min-width: 640px) { .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+.chart-wrap { position: relative; margin-top: 4px; }
+.chart-wrap svg { display: block; touch-action: pan-y; outline-offset: 4px; }
+.chart-wrap .grid { stroke: var(--rule); stroke-width: 1; }
+.chart-wrap .tick { fill: var(--chalk-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.chart-wrap .band { fill: var(--drift); opacity: 0.2; }
+.chart-wrap .band-b { fill: var(--rest); opacity: 0.28; }
+.chart-wrap .tap { stroke: var(--drift); stroke-width: 2; }
+.chart-wrap .seg-f { fill: var(--focus); }
+.chart-wrap .seg-a { fill: var(--drift); }
+.chart-wrap .seg-b { fill: var(--rest); }
+.chart-wrap .cross { stroke: var(--chalk-faint); stroke-width: 1; }
+.tip {
+  position: absolute; top: -4px; left: 0; transform: translate(-50%, -100%); display: none; pointer-events: none;
+  background: var(--board-sunk); border: 1px solid var(--rule); border-radius: var(--r-s);
+  padding: 8px 10px; font-size: 14px; line-height: 1.4; white-space: nowrap; z-index: 2;
+}
+.tip strong { font-size: 16px; font-weight: 700; }
+.tip-row { display: flex; align-items: center; gap: 7px; }
+.tip-when { color: var(--chalk-faint); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; color: var(--chalk-soft); }
+.key { display: inline-flex; align-items: center; gap: 7px; }
+.key-line { width: 16px; height: 2px; border-radius: 1px; background: var(--pulse); flex: none; }
+.key-box { width: 12px; height: 10px; border-radius: 3px; flex: none; }
+.key-box.f { background: var(--focus); }
+.key-box.a { background: var(--drift); }
+.key-box.b { background: var(--rest); }
+
+.bars { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: max-content 1fr max-content; gap: 10px 12px; align-items: center; font-size: 15px; }
+.bars li { display: contents; }
+.bars .track { height: 8px; }
+.bars .track i { display: block; height: 8px; min-width: 4px; background: var(--drift); border-radius: 0 4px 4px 0; }
+.bars .count { font-variant-numeric: tabular-nums; text-align: right; }
+
+.copybox { display: flex; flex-direction: column; gap: 10px; }
+.copybox textarea { font-size: 13px; min-height: 140px; }
+
+#toast {
+  position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 16px); z-index: 5;
+  background: var(--chalk); color: var(--ink-on-fill); font-weight: 600; font-size: 15px;
+  padding: 10px 16px; border-radius: 999px; opacity: 0; pointer-events: none; white-space: nowrap;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+@media (prefers-reduced-motion: reduce) { #toast, .sess-timer { transition: none; } }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <main id="view-home" class="view">
+    <header>
+      <h1>Drift Log</h1>
+      <p class="lede">Study the way you normally do. Tap once each time you catch your mind wandering, and every focused stretch gets timed.</p>
+    </header>
+
+    <div id="resume" class="notice" hidden></div>
+
+    <section class="panel" aria-labelledby="h-new">
+      <h2 id="h-new">New session</h2>
+      <form id="start-form" class="stack" novalidate>
+        <div class="field">
+          <label for="f-subject">What are you studying?</label>
+          <input id="f-subject" type="text" autocomplete="off" maxlength="80" placeholder="Thermodynamics, chapter 4">
+        </div>
+        <div class="field">
+          <label for="f-method">What are you trying this time?</label>
+          <input id="f-method" type="text" autocomplete="off" maxlength="60" placeholder="Nothing new (baseline)">
+          <div id="method-chips" class="chips"></div>
+          <p class="hint">Use the same words whenever you repeat a method, so its sessions are grouped together.</p>
+        </div>
+        <div id="hr-setup" class="hr-setup"></div>
+        <button id="btn-start" type="submit" class="btn btn-focus">Start session</button>
+      </form>
+    </section>
+
+    <section id="methods" class="stack" aria-labelledby="h-methods" hidden></section>
+
+    <section class="stack" aria-labelledby="h-sessions">
+      <h2 id="h-sessions">Sessions</h2>
+      <ul id="history" class="history"></ul>
+      <div id="export-all" class="actions"></div>
+      <div id="copy-home"></div>
+    </section>
+
+    <p id="store-note" class="hint"></p>
+  </main>
+
+  <main id="view-session" class="view-session" hidden>
+    <div class="sess-head">
+      <div class="sess-what">
+        <div id="s-subject" class="sess-subject"></div>
+        <div id="s-method" class="sess-method"></div>
+      </div>
+      <div id="s-hr" class="sess-hr"></div>
+    </div>
+    <div class="sess-core">
+      <div id="s-label" class="sess-label">Focused for</div>
+      <div id="s-timer" class="sess-timer" role="timer">0:00</div>
+      <div id="s-sub" class="sess-sub"></div>
+      <span id="s-strip" class="strip" aria-hidden="true"></span>
+      <div id="s-sparkwrap" class="sess-spark" hidden>
+        <div id="s-spark" class="spark"></div>
+        <div class="hint">Heart rate over the last 3 minutes</div>
+      </div>
+      <div id="s-tags" class="sess-tags" hidden>
+        <div class="field">
+          <div class="label" id="l-trig">What pulled you away?</div>
+          <div id="s-trig" class="chips" role="group" aria-labelledby="l-trig"></div>
+        </div>
+        <div class="field">
+          <div class="label" id="l-gone">How long were you gone before you noticed?</div>
+          <div id="s-gone" class="chips" role="group" aria-labelledby="l-gone"></div>
+        </div>
+      </div>
+    </div>
+    <div class="sess-foot">
+      <button id="s-main" type="button" class="btn btn-drift">I drifted</button>
+      <div id="s-links" class="sess-links"></div>
+      <p id="s-wake" class="hint"></p>
+    </div>
+  </main>
+
+  <main id="view-report" class="view view-report" hidden></main>
+
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ================= helpers ================= */
+  const $ = (id) => document.getElementById(id);
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  function make(ns, tag, attrs, kids) {
+    const n = ns ? document.createElementNS(ns, tag) : document.createElement(tag);
+    if (attrs) for (const k of Object.keys(attrs)) {
+      const v = attrs[k];
+      if (v == null || v === false) continue;
+      if (k === 'text') n.textContent = v;
+      else if (typeof v === 'function') n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v === true ? '' : v);
+    }
+    for (const kid of kids.flat()) if (kid != null && kid !== false) n.append(kid);
+    return n;
+  }
+  const h = (tag, attrs, ...kids) => make(null, tag, attrs, kids);
+  const sv = (tag, attrs, ...kids) => make(SVG_NS, tag, attrs, kids);
+  const add = (parent, ...kids) => { for (const kid of kids.flat()) if (kid != null && kid !== false) parent.append(kid); return parent; };
+  const setText = (id, t) => { const n = $(id); if (n && n.textContent !== t) n.textContent = t; };
+
+  const pad = (n) => String(n).padStart(2, '0');
+  function clock(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    const hh = Math.floor(sec / 3600), mm = Math.floor((sec % 3600) / 60), ss = sec % 60;
+    return hh ? hh + ':' + pad(mm) + ':' + pad(ss) : mm + ':' + pad(ss);
+  }
+  function span(sec) {
+    sec = Math.max(0, Math.round(sec));
+    if (sec < 60) return sec + ' s';
+    const m = Math.round(sec / 60);
+    if (m < 60) return m + ' min';
+    return Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '');
+  }
+  const fmtTime = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+  const fmtDay = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  const median = (a) => { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+  const tzName = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { return ''; } };
+  function isoLocal(ms, offMin) {
+    const a = Math.abs(offMin);
+    return new Date(ms + offMin * 60000).toISOString().slice(0, 19) + (offMin >= 0 ? '+' : '-') + pad(Math.floor(a / 60)) + ':' + pad(a % 60);
+  }
+  const buzz = (ms) => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* not allowed here */ } };
+  let toastTimer = 0;
+  function toast(msg) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+  }
+
+  /* ================= vocabulary ================= */
+  const TRIGGERS = [['phone', 'Phone'], ['thought', 'A stray thought'], ['sleepy', 'Sleepy'], ['noise', 'Noise or people'],
+    ['stuck', 'Stuck or bored'], ['body', 'Hungry or restless'], ['other', 'Something else']];
+  const NOTICED = [['just_now', 'Just now'], ['about_a_minute', 'About a minute'], ['a_few_minutes', 'A few minutes'], ['not_sure', 'Not sure']];
+  const TRIG = Object.fromEntries(TRIGGERS);
+  const BASELINE = 'Nothing new (baseline)';
+  const SUGGESTED = [BASELINE, 'Phone in another room', '25 minutes on, 5 off'];
+  const ABOUT = 'Study sessions with self-reported attention drifts. Fields ending in _s are seconds from the start of the session. ' +
+    'A drift is logged at the moment the person noticed and tapped, which lags the real start of the drift; noticed_after is their own estimate of that lag. ' +
+    'Planned breaks are listed under breaks: they pause the clock and are not drifts. ' +
+    'hr.bpm holds the mean heart rate for each step_s window from the start of the session (null means no reading). ' +
+    'hrv.rmssd_ms holds RMSSD per window from the Bluetooth RR intervals after outlier removal, and hrv.pairs the number of successive intervals behind each value; ' +
+    'treat windows with few pairs as unreliable. Heart rate comes from a wrist band and is context, not a measure of attention.';
+
+  /* ================= state and storage ================= */
+  const LS_KEY = 'driftlog.v1';
+  let data = { sessions: {}, synced: {}, gone: {}, last: { subject: '', method: '', hrOk: false } };
+  const store = { local: true, cloud: null, cloudState: 'none' };
+  const framed = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+  const hosted = () => !!(window.claude && typeof window.claude.use === 'function');
+  const canDownload = () => !framed && !hosted();
+  const fineKeys = !!(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches);
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  let view = 'home', active = null, reportId = null;
+
+  function loadLocal() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      if (d && typeof d.sessions === 'object') {
+        data.sessions = d.sessions || {}; data.synced = d.synced || {}; data.gone = d.gone || {};
+        data.last = Object.assign(data.last, d.last || {});
+      }
+    } catch (e) { store.local = false; }
+  }
+  function saveLocal() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(data)); store.local = true; }
+    catch (e) { store.local = false; }
+  }
+  function persist(sess) {
+    sess.updated_ms = Date.now();
+    saveLocal();
+    cloudSave(sess.id);
+  }
+  const finished = () => Object.values(data.sessions).filter((s) => s.end_ms).sort((a, b) => b.start_ms - a.start_ms);
+
+  /* ================= what a session adds up to ================= */
+  function analyse(sess, nowMs) {
+    const endMs = sess.end_ms || nowMs || Date.now();
+    const total = Math.max(0, Math.round((endMs - sess.start_ms) / 1000));
+    // Drifts and planned breaks both end a focused stretch; only drifts count against attention.
+    const pauses = sess.drifts.map((d) => ({ kind: 'drift', ref: d }))
+      .concat((sess.breaks || []).map((b) => ({ kind: 'break', ref: b })))
+      .sort((p, q) => p.ref.at_s - q.ref.at_s || (p.kind === q.kind ? 0 : p.kind === 'drift' ? -1 : 1));
+    const stretches = [], aways = [], rests = [];
+    let cursor = 0, open = null;
+    for (const p of pauses) {
+      const at = Math.min(Math.max(p.ref.at_s, cursor), total);
+      const back = p.ref.back_s == null ? total : Math.min(Math.max(p.ref.back_s, at), total);
+      if (p.kind === 'drift') {
+        stretches.push({ from: cursor, to: at, len: at - cursor, ended: 'drift', drift: p.ref });
+        aways.push({ from: at, to: back, drift: p.ref });
+      } else {
+        if (at > cursor) stretches.push({ from: cursor, to: at, len: at - cursor, ended: 'break', drift: null });
+        rests.push({ from: at, to: back });
+      }
+      cursor = back;
+      if (p.ref.back_s == null) open = p.kind;
+    }
+    // While a session runs, the stretch in progress always exists, even in its first second.
+    if (!open && (!sess.end_ms || total - cursor >= 1 || !pauses.length)) {
+      stretches.push({ from: cursor, to: total, len: total - cursor, ended: sess.end_ms ? 'end' : 'running', drift: null });
+    }
+    const sum = (list) => list.reduce((n, a) => n + (a.to - a.from), 0);
+    const away = sum(aways), rest = sum(rests), studied = total - rest;
+    const lens = stretches.map((x) => x.len);
+    return {
+      total, away, rest, studied, focused: studied - away, stretches, aways, rests, drifts: sess.drifts.length,
+      longest: lens.length ? Math.max.apply(null, lens) : 0, typical: median(lens),
+      perHour: studied >= 60 ? sess.drifts.length / (studied / 3600) : null,
+      isAway: open === 'drift' && !sess.end_ms, isBreak: open === 'break' && !sess.end_ms
+    };
+  }
+  function hrMean(sess, fromS, toS) {
+    if (!sess.hr) return null;
+    const st = sess.hr.step_s, b = sess.hr.bpm;
+    let sum = 0, n = 0;
+    for (let i = Math.max(0, Math.floor(fromS / st)); i < Math.min(b.length, Math.ceil(toS / st)); i++) if (b[i] != null) { sum += b[i]; n++; }
+    return n ? { mean: sum / n, n } : null;
+  }
+  // Mean heart rate in the minute before each drift, against the rest of the focused time.
+  function hrAroundDrifts(sess, A) {
+    if (!sess.hr || !A.drifts) return null;
+    const st = sess.hr.step_s, b = sess.hr.bpm, pre = new Set();
+    for (const x of A.stretches) {
+      if (x.ended !== 'drift') continue;
+      for (let i = Math.floor(Math.max(x.from, x.to - 60) / st); i < Math.floor(x.to / st); i++) pre.add(i);
+    }
+    let ps = 0, pn = 0, os = 0, on = 0;
+    for (const x of A.stretches) {
+      for (let i = Math.floor(x.from / st); i < Math.floor(x.to / st); i++) {
+        const v = b[i];
+        if (v == null) continue;
+        if (pre.has(i)) { ps += v; pn++; } else { os += v; on++; }
+      }
+    }
+    return pn >= 6 && on >= 12 ? { before: ps / pn, rest: os / on } : null;
+  }
+
+  function stripNode(A, scale) {
+    const box = h('span', { class: 'strip', 'aria-hidden': 'true' });
+    const parts = [];
+    for (const x of A.stretches) if (x.len > 0) parts.push([x.from, x.len, 'f']);
+    for (const a of A.aways) parts.push([a.from, a.to - a.from, 'a']);
+    for (const r of A.rests) parts.push([r.from, r.to - r.from, 'b']);
+    parts.sort((p, q) => p[0] - q[0] || 'fab'.indexOf(p[2]) - 'fab'.indexOf(q[2]));
+    for (const part of parts) { const i = h('i', { class: part[2] }); i.style.flexGrow = String(Math.max(part[1], 0.001)); box.append(i); }
+    if (scale && scale > A.total) { const sp = h('i', { class: 'gap' }); sp.style.flexGrow = String(scale - A.total); box.append(sp); }
+    return box;
+  }
+
+  /* ================= example shown before the first real session ================= */
+  let exampleCache = null;
+  function exampleSession() {
+    if (exampleCache) return exampleCache;
+    let seed = 7;
+    const rnd = () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(16, 10, 0, 0);
+    const total = 52 * 60, bpm = [];
+    let v = 74;
+    for (let i = 0; i < total / 5; i++) { v += (rnd() - 0.5) * 2.4 + (71 - v) * 0.03; bpm.push(Math.round(v)); }
+    exampleCache = {
+      v: 1, id: 'example', example: true, start_ms: d.getTime(), end_ms: d.getTime() + total * 1000,
+      tz: tzName(), utc_offset_min: -d.getTimezoneOffset(), subject: 'Organic chemistry, reaction mechanisms', method: 'Phone in another room', notes: '',
+      drifts: [
+        { at_s: 580, back_s: 625, trigger: 'thought', noticed_after: 'just_now' },
+        { at_s: 1445, back_s: 1610, trigger: 'phone', noticed_after: 'a_few_minutes' },
+        { at_s: 2010, back_s: 2045, trigger: 'noise', noticed_after: 'just_now' },
+        { at_s: 2835, back_s: 2920, trigger: 'sleepy', noticed_after: 'about_a_minute' }
+      ],
+      hr: { source: 'Example', step_s: 5, bpm }, hrv: null, ended_away: false, updated_ms: d.getTime()
+    };
+    return exampleCache;
+  }
+
+  /* ================= heart rate over Bluetooth ================= */
+  const HR = {
+    support: (() => {
+      if (!('bluetooth' in navigator)) return 'none';
+      try {
+        const fp = document.featurePolicy || document.permissionsPolicy;
+        if (fp && typeof fp.allowsFeature === 'function' && !fp.allowsFeature('bluetooth')) return 'blocked';
+      } catch (e) { /* treat as available and let the request decide */ }
+      return 'ok';
+    })(),
+    status: 'idle', device: null, name: '', rawName: '', bpm: null, lastAt: 0, heardAt: 0, note: '', offerAll: false,
+    recent: [], want: false, timer: 0, tries: 0
+  };
+  const HR_MSG = {
+    none: "Bluetooth isn't available in this view, so sessions here are recorded without heart rate. Drift Log reads the Fitbit Air live when it is opened on its own in Chrome or Edge on Android, Windows, Mac or a Chromebook.",
+    ios: "Web pages on iPhone and iPad can't use Bluetooth, so sessions here are recorded without heart rate."
+  };
+
+  // Bluetooth Heart Rate Measurement (0x2A37): flags, bpm as 8 or 16 bits, optional RR intervals in 1/1024 s.
+  function parseHrm(dv) {
+    const flags = dv.getUint8(0);
+    let i = 1, bpm;
+    if (flags & 1) { bpm = dv.getUint16(i, true); i += 2; } else { bpm = dv.getUint8(i); i += 1; }
+    const contact = (flags & 4) ? !!(flags & 2) : null;
+    if (flags & 8) i += 2;
+    const rr = [];
+    if (flags & 16) for (; i + 1 < dv.byteLength; i += 2) rr.push(Math.round(dv.getUint16(i, true) * 1000 / 1024));
+    return { bpm, contact, rr };
+  }
+
+  function hrSet(status, note) {
+    HR.status = status;
+    if (note != null) HR.note = note;
+    if (view === 'home') paintHrSetup();
+    paintSessionHr();
+  }
+  function pickerError(e) {
+    const name = e && e.name, msg = String((e && e.message) || '');
+    if (name === 'NotFoundError' && /cancel/i.test(msg)) {
+      HR.offerAll = true;
+      return "No band chosen. If your Fitbit Air wasn't in the list, check that Share heart rate is on in Google Health.";
+    }
+    if (name === 'SecurityError') { HR.support = 'blocked'; return ''; }
+    if (name === 'NotFoundError') return 'Bluetooth is off or missing on this device. Turn it on, then try again.';
+    return "The device list couldn't open. Check that Bluetooth is on, then try again.";
+  }
+  function linkError(e) {
+    const msg = String((e && e.message) || '');
+    if (/auth|permit|encrypt|insufficient/i.test(msg)) return 'The band refused the connection. Open Share heart rate in Google Health, accept any pairing request, then try again.';
+    if (e && e.name === 'NotFoundError') return "That device doesn't share heart rate. Pick your Fitbit Air, and check that Share heart rate is on in Google Health.";
+    return "Couldn't connect. Keep the band close, check that Share heart rate is on in Google Health, then try again.";
+  }
+  async function hrSubscribe() {
+    const server = await withTimeout(HR.device.gatt.connect(), 20000);
+    const service = await server.getPrimaryService('heart_rate');
+    const ch = await service.getCharacteristic('heart_rate_measurement');
+    ch.addEventListener('characteristicvaluechanged', hrOnValue);
+    await ch.startNotifications();
+    HR.heardAt = Date.now();
+    if (!data.last.hrOk) { data.last.hrOk = true; saveLocal(); }
+  }
+  async function hrConnect(showAll) {
+    if (HR.support !== 'ok' || HR.status === 'choosing' || HR.status === 'connecting') return;
+    hrSet('choosing', '');
+    let device;
+    try {
+      device = await navigator.bluetooth.requestDevice(showAll
+        ? { acceptAllDevices: true, optionalServices: ['heart_rate'] }
+        : { filters: [{ services: ['heart_rate'] }] });
+    } catch (e) { hrSet('idle', pickerError(e)); return; }
+    hrDrop();
+    HR.device = device; HR.rawName = device.name || ''; HR.name = HR.rawName || 'your band'; HR.want = true; HR.tries = 0; HR.offerAll = false;
+    device.addEventListener('gattserverdisconnected', hrLost);
+    hrSet('connecting', '');
+    try { await hrSubscribe(); hrSet('on', ''); }
+    catch (e) { HR.want = false; const why = linkError(e); hrDrop(); hrSet('idle', why); }
+  }
+  function hrDrop() {
+    clearTimeout(HR.timer);
+    if (HR.device) {
+      try { HR.device.removeEventListener('gattserverdisconnected', hrLost); if (HR.device.gatt.connected) HR.device.gatt.disconnect(); } catch (e) { /* already gone */ }
+    }
+    HR.device = null; HR.bpm = null;
+  }
+  function hrDisconnect() { HR.want = false; hrDrop(); HR.recent = []; hrSet('idle', ''); }
+  function hrLost() {
+    if (!HR.want || HR.status === 'connecting' || HR.status === 'reconnecting') return;
+    HR.bpm = null;
+    hrSet('reconnecting', '');
+    hrRetry();
+  }
+  function hrRetry() {
+    clearTimeout(HR.timer);
+    if (HR.tries >= 24) { HR.want = false; hrDrop(); hrSet('idle', 'Lost the band. Tap Connect to find it again.'); return; }
+    const waits = [1, 2, 4, 8, 15, 30];
+    const wait = waits[Math.min(HR.tries, waits.length - 1)] * 1000;
+    HR.tries++;
+    HR.timer = setTimeout(async () => {
+      if (!HR.want || !HR.device) return;
+      try { await hrSubscribe(); HR.tries = 0; hrSet('on', ''); }
+      catch (e) { if (HR.want) hrRetry(); }
+    }, wait);
+  }
+  function hrOnValue(e) {
+    let p;
+    try { p = parseHrm(e.target.value); } catch (err) { return; }
+    const now = Date.now();
+    HR.heardAt = now;
+    if (p.contact === false || !(p.bpm >= 30 && p.bpm <= 230)) { paintHrNumbers(); return; }
+    HR.bpm = p.bpm; HR.lastAt = now;
+    HR.recent.push([now, p.bpm]);
+    while (HR.recent.length && now - HR.recent[0][0] > 180000) HR.recent.shift();
+    if (active) recordHr(active, p.bpm, p.rr, now);
+    paintHrNumbers();
+  }
+  function hrWatch() {
+    if (HR.status !== 'on') return;
+    const now = Date.now();
+    if (HR.lastAt && now - HR.lastAt > 8000) paintHrNumbers();
+    if (HR.heardAt && now - HR.heardAt > 45000 && HR.device) {
+      HR.heardAt = now;
+      try { HR.device.gatt.disconnect(); } catch (e) { /* ignore */ }
+      hrLost();
+    }
+  }
+  const bpmText = () => (HR.bpm != null && Date.now() - HR.lastAt < 8000 ? String(HR.bpm) : '–');
+
+  // Recording into the running session: 5-second mean bpm, and RMSSD per 30 seconds when the band sends RR intervals.
+  let acc = { i: -1, sum: 0, n: 0 };
+  let rrs = { recent: [], prev: null, lastT: -10, j: -1, sumSq: 0, pairs: 0, rejects: 0 };
+  let hrDirty = false;
+  function resetHrAcc() { acc = { i: -1, sum: 0, n: 0 }; rrs = { recent: [], prev: null, lastT: -10, j: -1, sumSq: 0, pairs: 0, rejects: 0 }; }
+  function recordHr(sess, bpm, rr, now) {
+    const t = (now - sess.start_ms) / 1000;
+    if (t < 0) return;
+    if (!sess.hr) sess.hr = { source: HR.rawName || 'Bluetooth heart rate sensor', step_s: 5, bpm: [] };
+    const i = Math.floor(t / 5), arr = sess.hr.bpm;
+    if (acc.i !== i) acc = { i, sum: 0, n: 0 };
+    acc.sum += bpm; acc.n++;
+    while (arr.length < i) arr.push(null);
+    arr[i] = Math.round(acc.sum / acc.n);
+    if (rr.length) recordRr(sess, rr, t);
+    hrDirty = true;
+  }
+  function recordRr(sess, rr, t) {
+    if (!sess.hrv) sess.hrv = { step_s: 30, rmssd_ms: [], pairs: [] };
+    if (t - rrs.lastT > 3) rrs.prev = null;            // a gap in the stream: never pair across it
+    rrs.lastT = t;
+    const j = Math.floor(t / 30);
+    if (j !== rrs.j) { rrs.j = j; rrs.sumSq = 0; rrs.pairs = 0; }
+    for (const ms of rr) {
+      const med = median(rrs.recent);
+      const ok = ms >= 300 && ms <= 2000 && (med == null || Math.abs(ms - med) <= 0.25 * med);
+      if (!ok) {
+        rrs.prev = null;
+        if (++rrs.rejects >= 5) { rrs.recent = []; rrs.rejects = 0; }   // the rhythm really changed: start over
+        continue;
+      }
+      rrs.rejects = 0;
+      if (rrs.prev != null) { const dd = ms - rrs.prev; rrs.sumSq += dd * dd; rrs.pairs++; }
+      rrs.prev = ms;
+      rrs.recent.push(ms);
+      if (rrs.recent.length > 7) rrs.recent.shift();
+    }
+    const a = sess.hrv;
+    while (a.rmssd_ms.length < j) { a.rmssd_ms.push(null); a.pairs.push(0); }
+    a.rmssd_ms[j] = rrs.pairs ? Math.round(Math.sqrt(rrs.sumSq / rrs.pairs)) : null;
+    a.pairs[j] = rrs.pairs;
+  }
+
+  function paintSpark(box) {
+    if (!box || box.offsetParent === null) return;
+    box.textContent = '';
+    const now = Date.now(), pts = HR.recent;
+    if (pts.length < 2) return;
+    const W = Math.max(120, Math.floor(box.clientWidth || 160)), H = 40, t0 = now - 180000;
+    let mn = Infinity, mx = -Infinity;
+    for (const p of pts) { if (p[1] < mn) mn = p[1]; if (p[1] > mx) mx = p[1]; }
+    if (mx - mn < 8) { const mid = (mx + mn) / 2; mn = mid - 4; mx = mid + 4; }
+    const X = (t) => 6 + (W - 12) * Math.max(0, (t - t0) / 180000), Y = (v) => 6 + (H - 12) * (1 - (v - mn) / (mx - mn));
+    let d = '', prevT = 0;
+    for (const p of pts) { d += (d && p[0] - prevT < 6000 ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1); prevT = p[0]; }
+    const last = pts[pts.length - 1];
+    box.append(sv('svg', { width: W, height: H, viewBox: '0 0 ' + W + ' ' + H, 'aria-hidden': 'true' },
+      sv('path', { d, class: 'hr-path' }),
+      sv('circle', { cx: X(last[0]).toFixed(1), cy: Y(last[1]).toFixed(1), r: 4, class: 'hr-dot' })));
+  }
+  function paintHrNumbers() {
+    const t = bpmText();
+    setText('hr-big-num', t);
+    setText('s-hr-num', t);
+    if (view === 'home') paintSpark($('hr-big-spark'));
+    else if (view === 'session') paintSpark($('s-spark'));
+  }
+  function paintHrSetup() {
+    const box = $('hr-setup');
+    box.textContent = '';
+    box.append(h('div', { class: 'label', text: 'Heart rate from your Fitbit Air' }));
+    if (HR.support !== 'ok') {
+      box.append(h('p', { class: 'hint', text: isIOS ? HR_MSG.ios : HR_MSG.none }));
+      return;
+    }
+    if (HR.status === 'on' || HR.status === 'reconnecting') {
+      box.append(
+        h('div', { class: 'hr-live' },
+          h('div', null, h('span', { id: 'hr-big-num', class: 'hr-num', text: bpmText() }), h('span', { class: 'hr-unit', text: ' bpm' })),
+          h('div', { id: 'hr-big-spark', class: 'spark' })),
+        h('div', { class: 'hr-line' },
+          h('span', { class: 'hint', text: HR.status === 'on' ? 'Connected to ' + HR.name + '.' : 'Lost the band. Reconnecting…' }),
+          h('button', { type: 'button', class: 'link', onclick: hrDisconnect, text: 'Disconnect' })));
+      paintSpark($('hr-big-spark'));
+      return;
+    }
+    const busy = HR.status === 'choosing' || HR.status === 'connecting';
+    add(box,
+      h('p', { class: 'hint', text: 'Optional. Sessions work without it.' }),
+      h('button', { type: 'button', class: 'btn-quiet', disabled: busy, onclick: () => hrConnect(false),
+        text: HR.status === 'choosing' ? 'Pick your band from the list…' : HR.status === 'connecting' ? 'Connecting…' : 'Connect Fitbit Air' }),
+      HR.note ? h('p', { class: 'hint warn', role: 'status', text: HR.note }) : null,
+      HR.offerAll && !busy ? h('button', { type: 'button', class: 'link', onclick: () => hrConnect(true), text: 'Show every nearby Bluetooth device' }) : null,
+      h('details', { open: !!HR.note },
+        h('summary', { text: 'How to switch on heart rate sharing' }),
+        h('ol', null,
+          h('li', { text: 'On your phone, open Google Health and tap Connections.' }),
+          h('li', { text: 'Choose your Fitbit Air, then tap Share heart rate.' }),
+          h('li', { text: 'Turn on Always visible, so the band keeps sharing while you study.' }),
+          h('li', { text: 'Back here, tap Connect Fitbit Air and pick the band from the list.' })),
+        h('p', { class: 'hint', text: "Sharing uses more of the band's battery. Turn it off in Google Health when you finish." })));
+  }
+  function paintSessionHr() {
+    const box = $('s-hr');
+    box.textContent = '';
+    $('s-sparkwrap').hidden = HR.status !== 'on';
+    if (HR.support !== 'ok') return;
+    if (HR.status === 'on') box.append(h('span', { class: 'dot' }), h('span', { id: 's-hr-num', class: 'hr-num', text: bpmText() }), h('span', { class: 'hr-unit', text: 'bpm' }));
+    else if (HR.status === 'reconnecting') box.append(h('span', { class: 'hint', text: 'Reconnecting to the band…' }));
+    else if (HR.status === 'choosing' || HR.status === 'connecting') box.append(h('span', { class: 'hint', text: 'Connecting…' }));
+    else box.append(h('button', { type: 'button', class: 'link', onclick: () => hrConnect(false), text: 'Connect heart rate' }));
+  }
+
+  /* ================= keeping the screen awake ================= */
+  let wake = null;
+  async function wakeOn() {
+    try {
+      if ('wakeLock' in navigator && !wake) {
+        wake = await navigator.wakeLock.request('screen');
+        wake.addEventListener('release', () => { wake = null; paintWake(); });
+      }
+    } catch (e) { wake = null; }
+    paintWake();
+  }
+  function wakeOff() { try { if (wake) wake.release(); } catch (e) { /* ignore */ } wake = null; }
+  function paintWake() {
+    setText('s-wake', (wake ? 'The screen stays on while the session runs.' : 'If the screen locks, the timer keeps counting. Unlock it and tap when you drift.') + (fineKeys ? ' The space bar logs a drift too.' : ''));
+  }
+
+  /* ================= running a session ================= */
+  let phasePainted = null, secPainted = -1, confirmEnd = false, confirmTimer = 0, lockUntil = 0;
+  const nowS = () => Math.max(0, Math.round((Date.now() - active.start_ms) / 1000));
+  const lastDrift = () => active.drifts[active.drifts.length - 1] || null;
+  const lastBreak = () => (active.breaks && active.breaks[active.breaks.length - 1]) || null;
+  const isAway = () => { const d = active && lastDrift(); return !!(d && d.back_s == null); };
+  const onBreak = () => { const b = active && lastBreak(); return !!(b && b.back_s == null); };
+
+  function show(v) {
+    view = v;
+    for (const name of ['home', 'session', 'report']) $('view-' + name).hidden = name !== v;
+    window.scrollTo(0, 0);
+  }
+  function startSession(subject, method) {
+    const now = Date.now();
+    active = {
+      v: 1, id: 's' + now.toString(36), start_ms: now, end_ms: null, tz: tzName(), utc_offset_min: -new Date(now).getTimezoneOffset(),
+      subject, method, notes: '', drifts: [], breaks: [], hr: null, hrv: null, ended_away: false, updated_ms: now
+    };
+    data.sessions[active.id] = active;
+    data.last.subject = subject; data.last.method = method;
+    resetHrAcc();
+    persist(active);
+    enterSession();
+  }
+  function enterSession() {
+    phasePainted = null; secPainted = -1; confirmEnd = false;
+    show('session');
+    setText('s-subject', active.subject || 'Untitled session');
+    setText('s-method', 'Trying: ' + active.method);
+    paintSessionHr();
+    paintSession();
+    wakeOn();
+  }
+  function mainAction() {
+    if (!active || Date.now() < lockUntil) return;
+    lockUntil = Date.now() + 600;                       // a double tap must not log a drift and cancel it
+    if (onBreak()) { const b = lastBreak(); b.back_s = Math.max(nowS(), b.at_s); buzz(20); }
+    else if (isAway()) { const d = lastDrift(); d.back_s = Math.max(nowS(), d.at_s); buzz(20); }
+    else { active.drifts.push({ at_s: nowS(), back_s: null, trigger: null, noticed_after: null }); buzz(45); }
+    persist(active);
+    paintSession();
+  }
+  function takeBreak() {
+    if (!active || isAway() || onBreak() || Date.now() < lockUntil) return;
+    lockUntil = Date.now() + 600;
+    if (!active.breaks) active.breaks = [];
+    active.breaks.push({ at_s: nowS(), back_s: null });
+    persist(active);
+    paintSession();
+  }
+  function undoPause() {
+    if (!active) return;
+    if (onBreak()) { active.breaks.pop(); toast('Break removed'); }
+    else if (isAway()) { active.drifts.pop(); toast('Drift removed'); }
+    else return;
+    persist(active);
+    paintSession();
+  }
+  function tagDrift(key, value) {
+    const d = active && lastDrift();
+    if (!d) return;
+    d[key] = d[key] === value ? null : value;
+    persist(active);
+    paintTags();
+  }
+  function finalize(sess, endMs) {
+    const breaks = sess.breaks || [];
+    const lastEvent = sess.drifts.concat(breaks).reduce((m, p) => Math.max(m, p.at_s, p.back_s || 0), 0);
+    sess.end_ms = Math.max(endMs, sess.start_ms + lastEvent * 1000);
+    const endS = Math.round((sess.end_ms - sess.start_ms) / 1000);
+    const d = sess.drifts[sess.drifts.length - 1], b = breaks[breaks.length - 1];
+    if (d && d.back_s == null) { d.back_s = endS; sess.ended_away = true; }
+    if (b && b.back_s == null) { b.back_s = endS; sess.ended_on_break = true; }
+    persist(sess);
+  }
+  function endSession() {
+    if (!active) return;
+    const sess = active;
+    active = null;
+    clearTimeout(confirmTimer);
+    wakeOff();
+    finalize(sess, Date.now());
+    if (sess.end_ms - sess.start_ms < 60000 && !sess.drifts.length) {
+      removeSession(sess.id);
+      show('home'); renderHome();
+      toast('Under a minute, so it was not saved');
+      return;
+    }
+    openReport(sess.id);
+    toast('Session saved');
+  }
+  function removeSession(id) {
+    if (data.synced[id]) data.gone[id] = true;
+    delete data.sessions[id]; delete data.synced[id];
+    saveLocal();
+    if (store.cloud) { store.cloud.dirty.delete(id); cloudPump(); }
+  }
+
+  function fillChips(box, list, current, pick) {
+    box.textContent = '';
+    for (const pair of list) box.append(h('button', { type: 'button', class: 'chip', 'aria-pressed': String(current === pair[0]), onclick: () => pick(pair[0]), text: pair[1] }));
+  }
+  function paintTags() {
+    const d = lastDrift();
+    if (!d) return;
+    fillChips($('s-trig'), TRIGGERS, d.trigger, (k) => tagDrift('trigger', k));
+    fillChips($('s-gone'), NOTICED, d.noticed_after, (k) => tagDrift('noticed_after', k));
+  }
+  function paintLinks() {
+    const box = $('s-links');
+    box.textContent = '';
+    if (confirmEnd) {
+      box.append(
+        h('span', { class: 'ask', text: 'End and save this session?' }),
+        h('button', { type: 'button', class: 'link strong', onclick: endSession, text: 'End session' }),
+        h('button', { type: 'button', class: 'link', onclick: () => { confirmEnd = false; paintLinks(); }, text: 'Keep going' }));
+      return;
+    }
+    if (isAway() || onBreak()) box.append(h('button', { type: 'button', class: 'link', onclick: undoPause, text: 'Tapped by mistake' }));
+    else box.append(h('button', { type: 'button', class: 'link', onclick: takeBreak, text: 'Take a break' }));
+    box.append(h('button', { type: 'button', class: 'link', text: 'End session', onclick: () => {
+      confirmEnd = true; paintLinks();
+      clearTimeout(confirmTimer);
+      confirmTimer = setTimeout(() => { confirmEnd = false; if (active) paintLinks(); }, 8000);
+    } }));
+  }
+  function paintPhase(phase) {
+    const box = $('view-session'), paused = phase !== 'focus';
+    box.classList.toggle('is-away', phase === 'away');
+    box.classList.toggle('is-break', phase === 'break');
+    setText('s-label', phase === 'away' ? 'Away for' : phase === 'break' ? 'On a break for' : 'Focused for');
+    const main = $('s-main');
+    main.textContent = paused ? 'Back to studying' : 'I drifted';
+    main.className = 'btn ' + (paused ? 'btn-focus' : 'btn-drift');
+    $('s-tags').hidden = phase !== 'away';
+    if (phase === 'away') paintTags();
+    confirmEnd = false;
+    paintLinks();
+    secPainted = -1;
+  }
+  function paintSession() {
+    if (!active) return;
+    const A = analyse(active, Date.now());
+    const phase = A.isBreak ? 'break' : A.isAway ? 'away' : 'focus';
+    if (phase !== phasePainted) { phasePainted = phase; paintPhase(phase); }
+    const d = lastDrift(), b = lastBreak(), lastStretch = A.stretches[A.stretches.length - 1];
+    const secs = phase === 'break' ? A.total - b.at_s : phase === 'away' ? A.total - d.at_s : (lastStretch ? lastStretch.len : 0);
+    setText('s-timer', clock(secs));
+    $('s-timer').classList.toggle('long', secs >= 3600);
+    if (A.total === secPainted) return;
+    secPainted = A.total;
+    setText('s-sub', phase === 'away'
+      ? 'Logged at ' + fmtTime.format(active.start_ms + d.at_s * 1000) + ', after ' + span(lastStretch ? lastStretch.len : 0) + ' of focus.'
+      : phase === 'break'
+        ? 'Break started at ' + fmtTime.format(active.start_ms + b.at_s * 1000) + '. Breaks are not counted as drifts.'
+        : 'Session ' + clock(A.total) + ', ' + plural(A.drifts, 'drift', 'drifts') + ' so far.');
+    const strip = stripNode(A);
+    strip.id = 's-strip';
+    $('s-strip').replaceWith(strip);
+  }
+
+  /* ================= home ================= */
+  function paintResume() {
+    const box = $('resume');
+    box.textContent = '';
+    const open = Object.values(data.sessions).filter((s) => !s.end_ms).sort((a, b) => b.start_ms - a.start_ms)[0];
+    if (!open || active) { box.hidden = true; return; }
+    const lastSeen = Math.max(open.updated_ms || 0, open.start_ms);
+    box.hidden = false;
+    box.append(
+      h('p', { text: 'The session you started on ' + fmtDay.format(open.start_ms) + ' at ' + fmtTime.format(open.start_ms) + ' was never ended.' }),
+      h('div', { class: 'actions' },
+        Date.now() - open.start_ms < 12 * 3600000 ? h('button', { type: 'button', class: 'btn-quiet', text: 'Carry on with it', onclick: () => { active = open; resetHrAcc(); enterSession(); } }) : null,
+        h('button', { type: 'button', class: 'btn-quiet', text: 'End it at ' + fmtTime.format(lastSeen), onclick: () => {
+          finalize(open, lastSeen);
+          if (open.end_ms - open.start_ms < 60000 && !open.drifts.length) removeSession(open.id);
+          renderHome();
+        } })));
+  }
+  function paintMethodChips() {
+    const input = $('f-method'), names = [];
+    const has = (m) => names.some((x) => x.toLowerCase() === m.toLowerCase());
+    for (const s of finished()) if (s.method && !has(s.method)) names.push(s.method);
+    for (const m of SUGGESTED) if (names.length < 4 && !has(m)) names.push(m);
+    const box = $('method-chips');
+    box.textContent = '';
+    for (const m of names.slice(0, 5)) {
+      box.append(h('button', { type: 'button', class: 'chip', 'aria-pressed': String(input.value.trim().toLowerCase() === m.toLowerCase()), text: m,
+        onclick: () => { input.value = m; paintMethodChips(); } }));
+    }
+  }
+  function paintMethods() {
+    const box = $('methods'), list = finished();
+    box.textContent = '';
+    if (list.length < 2) { box.hidden = true; return; }
+    const groups = new Map();
+    for (const s of list) {
+      const name = s.method || BASELINE, key = name.trim().toLowerCase();
+      let g = groups.get(key);
+      if (!g) groups.set(key, g = { name, n: 0, secs: 0, drifts: 0, lens: [] });
+      const A = analyse(s);
+      g.n++; g.secs += A.studied; g.drifts += A.drifts;
+      for (const x of A.stretches) g.lens.push(x.len);
+    }
+    const rows = Array.from(groups.values()).sort((a, b) => b.n - a.n || b.secs - a.secs);
+    box.hidden = false;
+    box.append(
+      h('h2', { id: 'h-methods', text: 'Methods so far' }),
+      h('div', { class: 'table-scroll' },
+        h('table', null,
+          h('thead', null, h('tr', null, h('th', { text: 'Method' }), h('th', { class: 'num', text: 'Sessions' }), h('th', { class: 'num', text: 'Drifts per hour' }), h('th', { class: 'num', text: 'Typical stretch' }))),
+          h('tbody', null, rows.map((g) => h('tr', null,
+            h('td', { text: g.name }),
+            h('td', { class: 'num', text: String(g.n) }),
+            h('td', { class: 'num', text: g.secs >= 60 ? (g.drifts / (g.secs / 3600)).toFixed(1) : '–' }),
+            h('td', { class: 'num', text: g.lens.length ? span(median(g.lens)) : '–' })))))),
+      h('p', { class: 'hint', text: 'Typical stretch is the middle value of your focused stretches. Give a method three or more sessions before you compare it.' }));
+  }
+  function paintHistory() {
+    const ul = $('history'), list = finished();
+    ul.textContent = '';
+    const rows = list.length ? list : [exampleSession()];
+    const scale = Math.max.apply(null, rows.map((s) => analyse(s).total).concat([60]));
+    for (const s of rows) {
+      const A = analyse(s);
+      ul.append(h('li', null, h('button', { type: 'button', class: 'row', onclick: () => openReport(s.id) },
+        h('span', { class: 'row-top' },
+          h('span', { class: 'row-title', text: s.subject || 'Untitled session' }),
+          h('span', { class: 'row-when', text: s.example ? 'Example, made-up data' : fmtDay.format(s.start_ms) + ', ' + fmtTime.format(s.start_ms) })),
+        stripNode(A, scale),
+        h('span', { class: 'row-meta', text: span(A.total) + ', ' + plural(A.drifts, 'drift', 'drifts') + ', longest stretch ' + span(A.longest) + '. Trying: ' + s.method }))));
+    }
+    if (!list.length) ul.append(h('li', { class: 'hint empty', text: 'Your own sessions will be listed here, newest first.' }));
+    const ex = $('export-all');
+    ex.textContent = '';
+    $('copy-home').textContent = '';
+    if (list.length) {
+      const ids = list.map((s) => s.id);
+      ex.append(h('button', { type: 'button', class: 'btn-quiet', text: 'Copy all sessions', onclick: () => copyText(JSON.stringify(exportDoc(ids)), 'All sessions copied', $('copy-home')) }));
+      if (canDownload()) ex.append(h('button', { type: 'button', class: 'btn-quiet', text: 'Download all sessions', onclick: () => downloadText('drift-log-all-sessions.json', JSON.stringify(exportDoc(ids))) }));
+    }
+  }
+  function paintStoreNote() {
+    let t;
+    if (store.cloudState === 'on') t = 'Your sessions are saved with this page in Claude and appear on any device where you open it.';
+    else if (store.cloudState === 'checking') t = '';
+    else if (!store.local) t = "This view can't save sessions. Copy the report before you close it.";
+    else if (canDownload()) t = 'Your sessions are saved in this browser on this device. Download them now and then to keep a copy.';
+    else t = 'Your sessions are saved on this device only for now.';
+    setText('store-note', t);
+  }
+  function renderHome() { paintResume(); paintMethodChips(); paintHrSetup(); paintMethods(); paintHistory(); paintStoreNote(); }
+
+  /* ================= report ================= */
+  function openReport(id) { reportId = id; show('report'); renderReport(); }
+  function stat(v, k, sub) { return h('div', { class: 'stat' }, h('div', { class: 'v', text: v }), h('div', { class: 'k', text: k }), sub ? h('div', { class: 'sub', text: sub }) : null); }
+
+  function renderReport() {
+    const root = $('view-report');
+    root.textContent = '';
+    const sess = reportId === 'example' ? exampleSession() : data.sessions[reportId];
+    if (!sess || !sess.end_ms) { show('home'); renderHome(); return; }
+    const A = analyse(sess);
+    const hasHr = !!(sess.hr && sess.hr.bpm.filter((v) => v != null).length >= 2);
+    const pct = A.studied ? Math.round(100 * A.focused / A.studied) : 0;
+    const method = String(sess.method || BASELINE).replace(/[.\s]+$/, '');
+
+    root.append(h('button', { type: 'button', class: 'link back', text: 'Back to all sessions', onclick: () => { show('home'); renderHome(); } }));
+    if (sess.example) root.append(h('p', { class: 'notice', text: 'This is made-up data, shown so you can see what a report looks like.' }));
+    root.append(h('header', null,
+      h('h1', { text: sess.subject || 'Untitled session' }),
+      h('p', { class: 'lede', text: fmtDay.format(sess.start_ms) + ', ' + fmtTime.format(sess.start_ms) + ' to ' + fmtTime.format(sess.end_ms) + '. Trying: ' + method + '.' })));
+
+    root.append(h('section', { class: 'stats', 'aria-label': 'Session totals' },
+      stat(span(A.total), 'Session length', A.rest ? 'Including ' + span(A.rest) + ' of breaks' : null),
+      stat(span(A.focused), 'Focused, ' + pct + '% of ' + (A.rest ? 'the time outside breaks' : 'the session')),
+      stat(String(A.drifts), A.drifts === 1 ? 'Drift' : 'Drifts', A.drifts && A.perHour != null ? A.perHour.toFixed(1) + ' per hour' : null),
+      stat(span(A.longest), 'Longest stretch', A.stretches.length > 1 ? 'Typical stretch ' + span(A.typical) : null)));
+
+    const chartHost = h('div', { class: 'chart-wrap' });
+    const around = hrAroundDrifts(sess, A);
+    root.append(h('section', { class: 'stack' },
+      h('h2', { text: 'Timeline' }),
+      chartHost,
+      h('div', { class: 'legend' },
+        hasHr ? h('span', { class: 'key' }, h('span', { class: 'key-line' }), 'Heart rate, bpm') : null,
+        h('span', { class: 'key' }, h('span', { class: 'key-box f' }), 'Focused'),
+        h('span', { class: 'key' }, h('span', { class: 'key-box a' }), 'Away'),
+        A.rests.length ? h('span', { class: 'key' }, h('span', { class: 'key-box b' }), 'Break') : null),
+      around ? h('p', { text: 'In the minute before each drift your heart rate averaged ' + Math.round(around.before) + ' bpm. Across the rest of your focused time it averaged ' + Math.round(around.rest) + ' bpm.' }) : null,
+      around ? h('p', { class: 'hint', text: 'One session is too little to read anything into this. It becomes useful across many.' }) : null,
+      !hasHr && !sess.example ? h('p', { class: 'hint', text: 'No heart rate was recorded in this session.' }) : null));
+    drawChart(chartHost, sess, A);
+
+    root.append(h('section', { class: 'stack' },
+      h('h2', { text: 'Focused stretches' }),
+      h('div', { class: 'table-scroll' }, h('table', null,
+        h('thead', null, h('tr', null, h('th', { text: 'Started' }), h('th', { class: 'num', text: 'Focused' }), h('th', { text: 'Ended by' }), h('th', { class: 'num', text: 'Away' }), hasHr ? h('th', { class: 'num', text: 'Avg bpm' }) : null)),
+        h('tbody', null, A.stretches.map((x) => {
+          const m = hasHr ? hrMean(sess, x.from, x.to) : null;
+          const aw = x.drift ? A.aways.find((a) => a.drift === x.drift) : x.ended === 'break' ? A.rests.find((r) => r.from === x.to) : null;
+          return h('tr', null,
+            h('td', { class: 'when', text: fmtTime.format(sess.start_ms + x.from * 1000) }),
+            h('td', { class: 'num', text: span(x.len) }),
+            h('td', { text: x.drift ? (x.drift.trigger ? TRIG[x.drift.trigger] || 'A drift' : 'A drift') : x.ended === 'break' ? 'A break' : 'End of session' }),
+            h('td', { class: 'num', text: aw ? span(aw.to - aw.from) : '' }),
+            hasHr ? h('td', { class: 'num', text: m ? String(Math.round(m.mean)) : '–' }) : null);
+        }))))));
+
+    const counts = new Map();
+    for (const d of sess.drifts) if (d.trigger) counts.set(d.trigger, (counts.get(d.trigger) || 0) + 1);
+    if (counts.size) {
+      const all = sess.drifts.length;
+      root.append(h('section', { class: 'stack' },
+        h('h2', { text: 'What pulled you away' }),
+        h('ul', { class: 'bars' }, Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).map((e) => {
+          const bar = h('i');
+          bar.style.width = Math.round(100 * e[1] / all) + '%';
+          return h('li', null, h('span', { text: TRIG[e[0]] || e[0] }), h('span', { class: 'track' }, bar), h('span', { class: 'count', text: e[1] + ' of ' + all }));
+        }))));
+    }
+    if (sess.example) return;
+
+    let notesTimer = 0;
+    const notes = h('textarea', { id: 'r-notes', rows: 3, placeholder: 'Sleep, mood, where you sat, anything that might explain the pattern' });
+    notes.value = sess.notes || '';
+    notes.addEventListener('input', () => { clearTimeout(notesTimer); notesTimer = setTimeout(() => { sess.notes = notes.value.trim(); persist(sess); }, 900); });
+    notes.addEventListener('blur', () => { if (sess.notes !== notes.value.trim()) { clearTimeout(notesTimer); sess.notes = notes.value.trim(); persist(sess); } });
+    root.append(h('section', { class: 'field' }, h('label', { for: 'r-notes', text: 'Notes on this session' }), notes));
+
+    const copyHost = h('div'), delHost = h('div', { class: 'actions' });
+    const paintDelete = (asking) => {
+      delHost.textContent = '';
+      if (!asking) { delHost.append(h('button', { type: 'button', class: 'link', text: 'Delete this session', onclick: () => paintDelete(true) })); return; }
+      delHost.append(
+        h('span', { text: 'Delete this session for good?' }),
+        h('button', { type: 'button', class: 'link strong', text: 'Delete session', onclick: () => { removeSession(sess.id); show('home'); renderHome(); toast('Session deleted'); } }),
+        h('button', { type: 'button', class: 'link', text: 'Keep it', onclick: () => paintDelete(false) }));
+    };
+    paintDelete(false);
+    root.append(h('section', { class: 'stack' },
+      h('h2', { text: 'Report for analysis' }),
+      h('p', { class: 'hint', text: 'The report holds every drift, every stretch and the heart rate record. Paste or attach it in a chat with Claude to dig into the patterns.' }),
+      h('div', { class: 'actions' },
+        h('button', { type: 'button', class: 'btn-quiet', text: 'Copy report', onclick: () => copyText(JSON.stringify(exportDoc([sess.id])), 'Report copied', copyHost) }),
+        canDownload() ? h('button', { type: 'button', class: 'btn-quiet', text: 'Download report', onclick: () => downloadText('drift-log-' + isoLocal(sess.start_ms, sess.utc_offset_min).slice(0, 16).replace(/[T:]/g, '-') + '.json', JSON.stringify(exportDoc([sess.id]))) }) : null),
+      copyHost, delHost));
+  }
+
+  function drawChart(host, sess, A) {
+    host.textContent = '';
+    const W = Math.max(260, Math.floor(host.clientWidth || 320));
+    host.dataset.w = String(host.clientWidth);
+    const bpm = sess.hr ? sess.hr.bpm : [], st = sess.hr ? sess.hr.step_s : 5;
+    const vals = bpm.filter((v) => v != null);
+    const hasHr = vals.length >= 2;
+    const m = { l: hasHr ? 32 : 2, r: 10, t: 8 };
+    const plotH = hasHr ? 150 : 0, stripY = m.t + plotH + (hasHr ? 12 : 0), stripH = 12, H = stripY + stripH + 24;
+    const total = Math.max(A.total, 1), innerW = W - m.l - m.r;
+    const x = (t) => m.l + innerW * Math.min(1, Math.max(0, t / total));
+    let lo = 0, hi = 1, y = () => 0;
+    const svg = sv('svg', { width: W, height: H, viewBox: '0 0 ' + W + ' ' + H, role: 'img', tabindex: 0 });
+
+    if (hasHr) {
+      const mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+      const step = mx - mn > 45 ? 20 : mx - mn > 18 ? 10 : 5;
+      lo = Math.floor((mn - 1) / step) * step; hi = Math.ceil((mx + 1) / step) * step;
+      if (hi - lo < step * 2) hi = lo + step * 2;
+      y = (v) => m.t + plotH * (1 - (v - lo) / (hi - lo));
+      for (let v = lo; v <= hi; v += step) {
+        svg.append(sv('line', { class: 'grid', x1: m.l, x2: W - m.r, y1: y(v), y2: y(v) }), sv('text', { class: 'tick', x: m.l - 7, y: y(v) + 4, 'text-anchor': 'end', text: String(v) }));
+      }
+      for (const a of A.aways) {
+        const x0 = x(a.from), w = Math.max(2, x(a.to) - x0);
+        svg.append(sv('rect', { class: 'band', x: x0, y: m.t, width: w, height: plotH }), sv('line', { class: 'tap', x1: x0 + 1, x2: x0 + 1, y1: m.t, y2: m.t + plotH }));
+      }
+      for (const r of A.rests) svg.append(sv('rect', { class: 'band-b', x: x(r.from), y: m.t, width: Math.max(2, x(r.to) - x(r.from)), height: plotH }));
+      let d = '', pen = false, lastI = -1;
+      for (let i = 0; i < bpm.length; i++) {
+        if (bpm[i] == null || (i + 0.5) * st > total + st) { pen = false; continue; }
+        d += (pen ? 'L' : 'M') + x((i + 0.5) * st).toFixed(1) + ' ' + y(bpm[i]).toFixed(1);
+        pen = true; lastI = i;
+      }
+      svg.append(sv('path', { class: 'hr-path', d }));
+      if (lastI >= 0) svg.append(sv('circle', { class: 'hr-dot', r: 4, cx: x((lastI + 0.5) * st).toFixed(1), cy: y(bpm[lastI]).toFixed(1) }));
+    }
+    for (const s of A.stretches) {
+      if (s.len <= 0) continue;
+      const x0 = x(s.from) + 1, w = Math.max(1.5, x(s.to) - x(s.from) - 2);
+      svg.append(sv('rect', { class: 'seg-f', x: x0, y: stripY, width: w, height: stripH, rx: 3 }));
+    }
+    for (const a of A.aways) {
+      const x0 = x(a.from) + 1, w = Math.max(2, x(a.to) - x(a.from) - 2);
+      svg.append(sv('rect', { class: 'seg-a', x: x0, y: stripY, width: w, height: stripH, rx: Math.min(3, w / 2) }));
+    }
+    for (const r of A.rests) {
+      const x0 = x(r.from) + 1, w = Math.max(2, x(r.to) - x(r.from) - 2);
+      svg.append(sv('rect', { class: 'seg-b', x: x0, y: stripY, width: w, height: stripH, rx: Math.min(3, w / 2) }));
+    }
+    const tstep = [60, 120, 300, 600, 900, 1200, 1800, 3600, 7200].find((s) => total / s <= 6) || 14400;
+    for (let t = 0; t <= total; t += tstep) {
+      const isLast = t + tstep > total, px = x(t);
+      svg.append(sv('text', { class: 'tick', x: px, y: stripY + stripH + 17, 'text-anchor': t === 0 ? 'start' : (px > W - 34 ? 'end' : 'middle'), text: (t / 60) + (isLast ? ' min' : '') }));
+    }
+
+    const cross = sv('line', { class: 'cross', y1: m.t, y2: stripY + stripH });
+    const dot = sv('circle', { class: 'hr-dot', r: 5 });
+    cross.style.display = 'none'; dot.style.display = 'none';
+    svg.append(cross, dot);
+    const tip = h('div', { class: 'tip', role: 'status' });
+    host.append(svg, tip);
+    svg.setAttribute('aria-label', 'Timeline of this ' + span(A.total) + ' session with ' + plural(A.drifts, 'drift', 'drifts') +
+      (hasHr ? '. Heart rate ranged from ' + Math.min.apply(null, vals) + ' to ' + Math.max.apply(null, vals) + ' bpm' : '') + '. Use the arrow keys to read any moment.');
+
+    function showAt(t) {
+      t = Math.min(total, Math.max(0, t));
+      const i = Math.min(bpm.length - 1, Math.floor(t / st)), v = hasHr && i >= 0 ? bpm[i] : null, px = x(t);
+      cross.setAttribute('x1', px); cross.setAttribute('x2', px); cross.style.display = '';
+      if (v != null) { dot.setAttribute('cx', px); dot.setAttribute('cy', y(v)); dot.style.display = ''; } else dot.style.display = 'none';
+      const aw = A.aways.find((a) => t >= a.from && t < Math.max(a.to, a.from + 1));
+      const rs = A.rests.find((r) => t >= r.from && t < Math.max(r.to, r.from + 1));
+      const state = rs ? 'On a break' : aw ? 'Away' + (aw.drift.trigger && TRIG[aw.drift.trigger] ? ', ' + TRIG[aw.drift.trigger].toLowerCase() : '') : 'Focused';
+      tip.textContent = '';
+      if (v != null) tip.append(h('div', { class: 'tip-row' }, h('span', { class: 'key-line' }), h('strong', { text: v + ' bpm' })));
+      tip.append(
+        h('div', { class: 'tip-row' }, h('span', { class: 'key-box ' + (rs ? 'b' : aw ? 'a' : 'f') }), h(v != null ? 'span' : 'strong', { text: state })),
+        h('div', { class: 'tip-when', text: fmtTime.format(sess.start_ms + t * 1000) + ', ' + clock(t) + ' in' }));
+      tip.style.display = 'block';
+      const half = tip.offsetWidth / 2;
+      tip.style.left = Math.min(W - half, Math.max(half, px)) + 'px';
+    }
+    function hide() { cross.style.display = 'none'; dot.style.display = 'none'; tip.style.display = 'none'; }
+    const tOf = (e) => { const r = svg.getBoundingClientRect(); return ((e.clientX - r.left) * (W / r.width) - m.l) / innerW * total; };
+    svg.addEventListener('pointermove', (e) => showAt(tOf(e)));
+    svg.addEventListener('pointerdown', (e) => showAt(tOf(e)));
+    svg.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') hide(); });
+    let kt = null;
+    svg.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      const stepT = Math.max(5, total / 100) * (e.shiftKey ? 10 : 1);
+      kt = Math.min(total, Math.max(0, (kt == null ? 0 : kt) + (e.key === 'ArrowRight' ? stepT : -stepT)));
+      showAt(kt);
+    });
+    svg.addEventListener('blur', hide);
+  }
+
+  /* ================= report export ================= */
+  function exportSession(sess) {
+    const A = analyse(sess);
+    return {
+      id: sess.id, started: isoLocal(sess.start_ms, sess.utc_offset_min), ended: isoLocal(sess.end_ms, sess.utc_offset_min), timezone: sess.tz,
+      subject: sess.subject, method: sess.method, notes: sess.notes,
+      duration_s: A.total, focused_s: A.focused, away_s: A.away, break_s: A.rest, drift_count: A.drifts, ended_while_away: !!sess.ended_away,
+      drifts: sess.drifts.map((d) => {
+        const aw = A.aways.find((a) => a.drift === d), st = A.stretches.find((x) => x.drift === d);
+        return { at_s: d.at_s, back_s: d.back_s, away_s: aw.to - aw.from, focused_before_s: st.len, trigger: d.trigger, noticed_after: d.noticed_after };
+      }),
+      breaks: (sess.breaks || []).map((b) => ({ at_s: b.at_s, back_s: b.back_s, length_s: b.back_s - b.at_s })),
+      stretches: A.stretches.map((x) => {
+        const mm = hrMean(sess, x.from, x.to);
+        return { from_s: x.from, to_s: x.to, length_s: x.len, ended_by: x.ended === 'drift' ? 'drift' : x.ended === 'break' ? 'break' : 'session end', avg_bpm: mm ? Math.round(mm.mean * 10) / 10 : null };
+      }),
+      hr: sess.hr, hrv: sess.hrv
+    };
+  }
+  function exportDoc(ids) {
+    const sessions = ids.map((id) => data.sessions[id]).filter((s) => s && s.end_ms).sort((a, b) => a.start_ms - b.start_ms).map(exportSession);
+    return { app: 'Drift Log', format: 1, exported: isoLocal(Date.now(), -new Date().getTimezoneOffset()), about: ABOUT, sessions };
+  }
+  async function copyText(text, okMsg, fallbackHost) {
+    try { await navigator.clipboard.writeText(text); toast(okMsg); if (fallbackHost) fallbackHost.textContent = ''; }
+    catch (e) {
+      if (!fallbackHost) return;
+      const ta = h('textarea', { readonly: true, rows: 6, 'aria-label': 'Report text' });
+      ta.value = text;
+      fallbackHost.textContent = '';
+      fallbackHost.append(h('div', { class: 'copybox' }, h('p', { class: 'hint warn', text: "Copying isn't allowed in this view. Select all of the text below and copy it yourself." }), ta));
+      ta.focus(); ta.select();
+    }
+  }
+  function downloadText(name, text) {
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    const a = h('a', { href: url, download: name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    toast('Download started');
+  }
+
+  /* ================= saving with the page when Claude hosts it ================= */
+  function cloudSave(id) {
+    if (!store.cloud) return;
+    store.cloud.dirty.add(id);
+    cloudPump();
+  }
+  async function cloudTry(fn, requeue) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try { await fn(); return true; }
+      catch (e) {
+        const code = e && e.code;
+        if (code === 'unavailable' && attempt === 0) { await sleep(700 + Math.random() * 900); continue; }
+        requeue();
+        if (code === 'unavailable' || code === 'resource_exhausted') {
+          store.cloudState = 'paused';
+          setTimeout(() => { if (store.cloudState === 'paused') { store.cloudState = 'on'; paintStoreNote(); cloudPump(); } }, 30000);
+        } else store.cloudState = 'stopped';         // no write access, quota, or access withdrawn: stay local for this visit
+        paintStoreNote();
+        return false;
+      }
+    }
+    return false;
+  }
+  async function cloudPump() {
+    const c = store.cloud;
+    if (!c || c.busy || store.cloudState !== 'on') return;
+    c.busy = true;
+    try {
+      while (store.cloudState === 'on') {
+        const goneId = Object.keys(data.gone)[0];
+        if (goneId) {
+          const ok = await cloudTry(() => c.col.doc(goneId).delete(), () => {});
+          if (ok) { delete data.gone[goneId]; saveLocal(); }
+          continue;
+        }
+        const id = c.dirty.values().next().value;
+        if (id == null) break;
+        c.dirty.delete(id);
+        const sess = data.sessions[id];
+        if (!sess) continue;
+        const ok = await cloudTry(() => c.col.doc(id).set(JSON.parse(JSON.stringify(sess))), () => c.dirty.add(id));
+        if (ok) { data.synced[id] = true; saveLocal(); }
+      }
+    } finally { c.busy = false; }
+  }
+  function mergeCloud(snap) {
+    const c = store.cloud, seen = new Set();
+    for (const doc of snap.docs) {
+      if (!doc.exists) continue;
+      const body = doc.data();
+      if (!body || body.v !== 1 || typeof body.start_ms !== 'number' || !Array.isArray(body.drifts)) continue;
+      seen.add(doc.id);
+      if (data.gone[doc.id]) continue;                                   // deleted here while offline
+      if (active && active.id === doc.id) continue;                      // never overwrite the session that is running
+      const mine = data.sessions[doc.id];
+      if (!mine || (body.updated_ms || 0) > (mine.updated_ms || 0)) { data.sessions[doc.id] = JSON.parse(JSON.stringify(body)); data.synced[doc.id] = true; }
+      else if ((mine.updated_ms || 0) > (body.updated_ms || 0)) c.dirty.add(doc.id);
+      else data.synced[doc.id] = true;
+    }
+    const confirmed = !(snap.metadata && snap.metadata.fromCache);
+    for (const id of Object.keys(data.sessions)) {
+      if (seen.has(id) || (active && active.id === id)) continue;
+      if (data.synced[id]) { if (confirmed) { delete data.sessions[id]; delete data.synced[id]; } }   // deleted on another device
+      else c.dirty.add(id);                                                                          // recorded here, not yet uploaded
+    }
+    if (confirmed) for (const id of Object.keys(data.gone)) if (!seen.has(id)) delete data.gone[id];
+    saveLocal();
+  }
+  async function cloudInit() {
+    store.cloudState = 'checking';
+    paintStoreNote();
+    let db = null, uid = null;
+    try {
+      const got = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+      db = got[0];
+      uid = got[1] ? await got[1].id() : null;
+    } catch (e) { /* treated as unavailable below */ }
+    if (db && uid) {
+      try {
+        const col = db.collection('data/users/' + uid);
+        store.cloud = { col, dirty: new Set(), busy: false };
+        let snap = null;
+        try { snap = await withTimeout(col.limit(1000).get(), 10000); } catch (e) { snap = null; }
+        if (snap && Array.isArray(snap.docs)) mergeCloud(snap);
+        else {
+          // The first read can fail before anything has ever been saved. Keep writing: nothing is pruned without a confirmed read.
+          for (const id of Object.keys(data.sessions)) if (!data.synced[id] && !(active && active.id === id)) store.cloud.dirty.add(id);
+        }
+        store.cloudState = 'on';
+        cloudPump();
+      } catch (e) { store.cloud = null; }
+    }
+    if (store.cloudState !== 'on') store.cloudState = 'none';
+    if (view === 'home') renderHome(); else paintStoreNote();
+  }
+  function tryCloud(n) {
+    if (hosted()) { cloudInit(); return; }
+    if (n > 0 && framed) setTimeout(() => tryCloud(n - 1), 500);
+  }
+
+  /* ================= wiring ================= */
+  $('start-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (active) return;
+    startSession($('f-subject').value.trim(), $('f-method').value.trim() || BASELINE);
+  });
+  $('f-method').addEventListener('input', paintMethodChips);
+  $('s-main').addEventListener('click', mainAction);
+  document.addEventListener('keydown', (e) => {
+    if (view !== 'session' || e.code !== 'Space' || e.repeat) return;
+    const tag = e.target && e.target.tagName;
+    if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SUMMARY') return;
+    e.preventDefault();
+    mainAction();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') { if (active) { wakeOn(); paintSession(); } }
+    else if (active) { active.updated_ms = Date.now(); saveLocal(); }
+  });
+  window.addEventListener('pagehide', () => { if (active) { active.updated_ms = Date.now(); saveLocal(); } });
+  window.addEventListener('beforeunload', (e) => { if (active) { e.preventDefault(); e.returnValue = ''; } });
+  let resizeTimer = 0;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (view !== 'report') return;
+      const host = document.querySelector('#view-report .chart-wrap');
+      const sess = reportId === 'example' ? exampleSession() : data.sessions[reportId];
+      if (host && sess && host.dataset.w !== String(host.clientWidth)) drawChart(host, sess, analyse(sess));   // only when the width really changed
+    }, 150);
+  });
+  setInterval(() => { if (view === 'session') paintSession(); hrWatch(); }, 250);
+  setInterval(() => { if (active) { active.updated_ms = Date.now(); saveLocal(); hrDirty = false; } }, 30000);
+
+  // Served from its own web address, the app can be installed and keeps opening without a connection.
+  if (!framed && !hosted() && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => { /* the page works without it */ }); });
+  }
+
+  loadLocal();
+  $('f-subject').value = data.last.subject || '';
+  $('f-method').value = data.last.method || '';
+  renderHome();
+  tryCloud(8);
+})();
+</script>
+</body>
+</html>
